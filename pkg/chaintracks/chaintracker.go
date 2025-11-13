@@ -15,7 +15,7 @@ func (cm *ChainManager) IsValidRootForHeight(ctx context.Context, root *chainhas
 	}
 
 	// Get the header at the given height
-	header, err := cm.store.GetHeaderByHeight(height)
+	header, err := cm.GetHeaderByHeight(height)
 	if err != nil {
 		return false, err
 	}
@@ -32,5 +32,5 @@ func (cm *ChainManager) CurrentHeight(ctx context.Context) (uint32, error) {
 		return 0, ErrNotSynced
 	}
 
-	return cm.store.GetHeight(), nil
+	return cm.GetHeight(), nil
 }

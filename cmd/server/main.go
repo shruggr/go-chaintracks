@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,9 @@ func main() {
 	log.Printf("  Network: %s", config.Network)
 	log.Printf("  Port: %d", config.Port)
 	log.Printf("  Storage Path: %s", config.StoragePath)
+	if config.BootstrapURL != "" {
+		log.Printf("  Bootstrap URL: %s", config.BootstrapURL)
+	}
 
 	if err := ensureHeadersExist(config.StoragePath, config.Network); err != nil {
 		log.Fatalf("Failed to initialize headers: %v", err)
@@ -37,10 +41,41 @@ func main() {
 		log.Printf("Chain tip: %s at height %d", tip.Header.Hash().String(), tip.Height)
 	}
 
+	// Run bootstrap sync if configured
+	if config.BootstrapURL != "" {
+		log.Printf("Bootstrap URL configured: %s", config.BootstrapURL)
+		if err := BootstrapSync(cm, config.BootstrapURL); err != nil {
+			log.Printf("Bootstrap sync failed: %v (will continue with P2P sync)", err)
+		}
+
+		// Log updated chain state after bootstrap
+		if tip := cm.GetTip(); tip != nil {
+			log.Printf("Chain tip after bootstrap: %s at height %d", tip.Header.Hash().String(), tip.Height)
+		}
+	}
+
+	// Start P2P listener
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := NewP2PListener(cm, config.Network, config.StoragePath)
+	if err != nil {
+		log.Fatalf("Failed to create P2P listener: %v", err)
+	}
+
+	if err := listener.Start(ctx); err != nil {
+		log.Fatalf("Failed to start P2P listener: %v", err)
+	}
+	log.Printf("P2P listener started for network: %s", config.Network)
+
 	server := NewServer(cm)
 
 	mux := http.NewServeMux()
 	server.SetupRoutes(mux)
+
+	// Add dashboard
+	dashboard := NewDashboardHandler(server, listener)
+	mux.Handle("/status", dashboard)
 
 	handler := loggingMiddleware(corsMiddleware(mux))
 
@@ -53,6 +88,7 @@ func main() {
 	go func() {
 		log.Printf("Server listening on http://localhost%s", addr)
 		log.Printf("Available endpoints:")
+		log.Printf("  GET  http://localhost%s/status - Status Dashboard", addr)
 		log.Printf("  GET  http://localhost%s/docs - API Documentation (Swagger UI)", addr)
 		log.Printf("  GET  http://localhost%s/getInfo", addr)
 		log.Printf("  GET  http://localhost%s/getPresentHeight", addr)
@@ -69,6 +105,10 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down gracefully...")
+	cancel()
+	if err := listener.Close(); err != nil {
+		log.Printf("Error closing P2P listener: %v", err)
+	}
 	if err := httpServer.Close(); err != nil {
 		log.Printf("Error closing server: %v", err)
 	}

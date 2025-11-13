@@ -3,9 +3,11 @@ package chaintracks
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/bsv-blockchain/go-sdk/block"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
@@ -78,6 +80,21 @@ func (cm *ChainManager) loadFromLocalFiles() error {
 			return fmt.Errorf("failed to load file %s: %w", fileEntry.FileName, err)
 		}
 
+		blockHeaders := make([]*BlockHeader, 0, len(headers))
+
+		// Calculate chainwork incrementally
+		var prevChainWork *big.Int
+		if fileEntry.FirstHeight == 0 {
+			prevChainWork = big.NewInt(0)
+		} else {
+			// Get the chainwork from the previous block (last block of previous file)
+			prevHeader, err := cm.GetHeaderByHeight(fileEntry.FirstHeight - 1)
+			if err != nil {
+				return fmt.Errorf("failed to get previous header at height %d: %w", fileEntry.FirstHeight-1, err)
+			}
+			prevChainWork = prevHeader.ChainWork
+		}
+
 		for i, header := range headers {
 			height := fileEntry.FirstHeight + uint32(i)
 
@@ -85,9 +102,9 @@ func (cm *ChainManager) loadFromLocalFiles() error {
 			if height == 0 {
 				chainWork = big.NewInt(0)
 			} else {
-				prevHeader, _ := cm.store.GetHeaderByHeight(height - 1)
 				work := CalculateWork(header.Bits)
-				chainWork = new(big.Int).Add(prevHeader.ChainWork, work)
+				chainWork = new(big.Int).Add(prevChainWork, work)
+				prevChainWork = chainWork
 			}
 
 			blockHeader := &BlockHeader{
@@ -96,9 +113,11 @@ func (cm *ChainManager) loadFromLocalFiles() error {
 				ChainWork: chainWork,
 			}
 
-			if err := cm.store.AddHeader(blockHeader); err != nil {
-				return fmt.Errorf("failed to add header at height %d: %w", height, err)
-			}
+			blockHeaders = append(blockHeaders, blockHeader)
+		}
+
+		if err := cm.SetChainTip(blockHeaders); err != nil {
+			return fmt.Errorf("failed to set chain tip for file %s: %w", fileEntry.FileName, err)
 		}
 	}
 
@@ -115,34 +134,52 @@ func (cm *ChainManager) SetChainTip(branchHeaders []*BlockHeader) error {
 	}
 
 	// Update in-memory chain
-	cm.store.mu.Lock()
+	cm.mu.Lock()
+
+	// Update byHeight for all blocks in the new branch
 	for _, header := range branchHeaders {
 		hash := header.Hash()
 
 		// Ensure slice is large enough
-		for uint32(len(cm.store.byHeight)) <= header.Height {
-			cm.store.byHeight = append(cm.store.byHeight, chainhash.Hash{})
+		for uint32(len(cm.byHeight)) <= header.Height {
+			cm.byHeight = append(cm.byHeight, chainhash.Hash{})
 		}
 
 		// Update byHeight and byHash
-		cm.store.byHeight[header.Height] = hash
-		cm.store.byHash[hash] = header
-
-		// Update tip if this is the new highest block
-		if cm.store.tip == nil || header.Height > cm.store.tip.Height {
-			cm.store.tip = header
-		}
+		cm.byHeight[header.Height] = hash
+		cm.byHash[hash] = header
 	}
-	cm.store.mu.Unlock()
+
+	// Clear any blocks after the new tip (handles reorg to shorter chain)
+	newTipHeight := branchHeaders[len(branchHeaders)-1].Height
+	if uint32(len(cm.byHeight)) > newTipHeight+1 {
+		cm.byHeight = cm.byHeight[:newTipHeight+1]
+	}
+
+	// Always set tip to the last header in the branch
+	cm.tip = branchHeaders[len(branchHeaders)-1]
+
+	// Prune orphaned headers older than 100 blocks
+	cm.pruneOrphans()
+
+	cm.mu.Unlock()
 
 	// Write headers to files
+	startWrite := time.Now()
 	if err := cm.writeHeadersToFiles(branchHeaders); err != nil {
 		return fmt.Errorf("failed to write headers to files: %w", err)
 	}
+	writeDuration := time.Since(startWrite)
 
 	// Update metadata
+	startMeta := time.Now()
 	if err := cm.updateMetadataForTip(); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
+	}
+	metaDuration := time.Since(startMeta)
+
+	if writeDuration > 100*time.Millisecond || metaDuration > 100*time.Millisecond {
+		log.Printf("SetChainTip timing: write=%v meta=%v", writeDuration, metaDuration)
 	}
 
 	return nil
@@ -222,7 +259,7 @@ func (cm *ChainManager) updateMetadataForTip() error {
 	}
 
 	// Update file entries based on current chain
-	tip := cm.store.GetTip()
+	tip := cm.GetTip()
 	if tip == nil {
 		return nil
 	}
@@ -253,7 +290,7 @@ func (cm *ChainManager) updateMetadataForTip() error {
 
 	// Get previous header for prevChainWork and prevHash
 	if tip.Height > 0 {
-		prevHeader, err := cm.store.GetHeaderByHeight(tip.Height - 1)
+		prevHeader, err := cm.GetHeaderByHeight(tip.Height - 1)
 		if err == nil {
 			lastFileEntry.PrevChainWork = ChainWorkToHex(prevHeader.ChainWork)
 			lastFileEntry.PrevHash = prevHeader.Hash().String()

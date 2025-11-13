@@ -8,9 +8,10 @@ import (
 
 // Config holds the server configuration
 type Config struct {
-	Port        int
-	Network     string
-	StoragePath string
+	Port         int
+	Network      string
+	StoragePath  string
+	BootstrapURL string
 }
 
 // LoadConfig loads configuration from environment variables with defaults
@@ -32,10 +33,13 @@ func LoadConfig() *Config {
 		storagePath = path
 	}
 
+	bootstrapURL := os.Getenv("BOOTSTRAP_URL")
+
 	return &Config{
-		Port:        port,
-		Network:     network,
-		StoragePath: storagePath,
+		Port:         port,
+		Network:      network,
+		StoragePath:  storagePath,
+		BootstrapURL: bootstrapURL,
 	}
 }
 
