@@ -12,9 +12,13 @@ import (
 	"syscall"
 
 	"github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file if it exists (ignore error if not found)
+	_ = godotenv.Load()
+
 	config := LoadConfig()
 
 	log.Printf("Starting chaintracks-server")

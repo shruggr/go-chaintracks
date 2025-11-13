@@ -51,7 +51,11 @@ err = cm.SetChainTip(newHeaders)
 go build -o server ./cmd/server
 ./server
 
-# Configure via environment
+# Configure via .env file
+cp .env.example .env
+# Edit .env with your settings
+
+# Or configure via environment variables
 PORT=3011 CHAIN=main STORAGE_PATH=~/.chaintracks ./server
 ```
 

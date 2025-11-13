@@ -2,13 +2,11 @@ module github.com/bsv-blockchain/go-chaintracks
 
 go 1.25.3
 
-replace github.com/bsv-blockchain/go-sdk => ../go-sdk
-
-replace github.com/bsv-blockchain/go-p2p-message-bus => ../go-p2p-message-bus
-
 require (
-	github.com/bsv-blockchain/go-p2p-message-bus v0.0.0
+	github.com/bsv-blockchain/go-p2p-message-bus v0.1.3
 	github.com/bsv-blockchain/go-sdk v1.2.12
+	github.com/joho/godotenv v1.5.1
+	github.com/libp2p/go-libp2p v0.45.0
 )
 
 require (
@@ -42,7 +40,6 @@ require (
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.3.0 // indirect
-	github.com/libp2p/go-libp2p v0.44.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
 	github.com/libp2p/go-libp2p-kad-dht v0.35.1 // indirect
 	github.com/libp2p/go-libp2p-kbucket v0.8.0 // indirect
@@ -127,3 +124,5 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
+replace github.com/bsv-blockchain/go-sdk => github.com/bsv-blockchain/go-sdk v1.2.12-0.20251113205800-18a86464d590
