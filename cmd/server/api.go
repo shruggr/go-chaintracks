@@ -3,18 +3,17 @@ package main
 import (
 	_ "embed"
 	"encoding/hex"
-	"encoding/json"
-	"net/http"
 	"strconv"
 
 	"github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
+	"github.com/gofiber/fiber/v2"
 )
 
 //go:embed openapi.yaml
 var openapiSpec string
 
-// Server wraps the ChainManager with HTTP handlers
+// Server wraps the ChainManager with Fiber handlers
 type Server struct {
 	cm *chaintracks.ChainManager
 }
@@ -61,30 +60,6 @@ type Package struct {
 	Version string `json:"version"`
 }
 
-// writeJSON writes a JSON response
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-// writeSuccess writes a success response
-func (s *Server) writeSuccess(w http.ResponseWriter, value interface{}) {
-	writeJSON(w, http.StatusOK, Response{
-		Status: "success",
-		Value:  value,
-	})
-}
-
-// writeError writes an error response
-func (s *Server) writeError(w http.ResponseWriter, code string, description string, status int) {
-	writeJSON(w, status, Response{
-		Status:      "error",
-		Code:        code,
-		Description: description,
-	})
-}
-
 // toBlockHeaderResponse converts a BlockHeader to API response format
 func toBlockHeaderResponse(bh *chaintracks.BlockHeader) BlockHeaderResponse {
 	hash := bh.Header.Hash()
@@ -101,23 +76,29 @@ func toBlockHeaderResponse(bh *chaintracks.BlockHeader) BlockHeaderResponse {
 }
 
 // HandleRoot returns service identification
-func (s *Server) HandleRoot(w http.ResponseWriter, r *http.Request) {
-	s.writeSuccess(w, "chaintracks-server")
+func (s *Server) HandleRoot(c *fiber.Ctx) error {
+	return c.JSON(Response{
+		Status: "success",
+		Value:  "chaintracks-server",
+	})
 }
 
 // HandleRobots returns robots.txt
-func (s *Server) HandleRobots(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte("User-agent: *\nDisallow: /\n"))
+func (s *Server) HandleRobots(c *fiber.Ctx) error {
+	c.Set("Content-Type", "text/plain")
+	return c.SendString("User-agent: *\nDisallow: /\n")
 }
 
 // HandleGetChain returns the network name
-func (s *Server) HandleGetChain(w http.ResponseWriter, r *http.Request) {
-	s.writeSuccess(w, s.cm.GetNetwork())
+func (s *Server) HandleGetChain(c *fiber.Ctx) error {
+	return c.JSON(Response{
+		Status: "success",
+		Value:  s.cm.GetNetwork(),
+	})
 }
 
 // HandleGetInfo returns service state information
-func (s *Server) HandleGetInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleGetInfo(c *fiber.Ctx) error {
 	height := s.cm.GetHeight()
 
 	info := InfoResponse{
@@ -132,129 +113,178 @@ func (s *Server) HandleGetInfo(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	s.writeSuccess(w, info)
+	return c.JSON(Response{
+		Status: "success",
+		Value:  info,
+	})
 }
 
 // HandleGetPresentHeight returns the current blockchain height
-func (s *Server) HandleGetPresentHeight(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "public, max-age=60")
-	s.writeSuccess(w, s.cm.GetHeight())
+func (s *Server) HandleGetPresentHeight(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "public, max-age=60")
+	return c.JSON(Response{
+		Status: "success",
+		Value:  s.cm.GetHeight(),
+	})
 }
 
 // HandleFindChainTipHashHex returns the chain tip hash
-func (s *Server) HandleFindChainTipHashHex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-cache")
+func (s *Server) HandleFindChainTipHashHex(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "no-cache")
 
 	tip := s.cm.GetTip()
 	if tip == nil {
-		s.writeError(w, "ERR_NO_TIP", "Chain tip not found", http.StatusNotFound)
-		return
+		return c.Status(fiber.StatusNotFound).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_NO_TIP",
+			Description: "Chain tip not found",
+		})
 	}
 
 	hash := tip.Header.Hash()
-	s.writeSuccess(w, &hash)
+	return c.JSON(Response{
+		Status: "success",
+		Value:  &hash,
+	})
 }
 
 // HandleFindChainTipHeaderHex returns the full chain tip header
-func (s *Server) HandleFindChainTipHeaderHex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-cache")
+func (s *Server) HandleFindChainTipHeaderHex(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "no-cache")
 
 	tip := s.cm.GetTip()
 	if tip == nil {
-		s.writeError(w, "ERR_NO_TIP", "Chain tip not found", http.StatusNotFound)
-		return
+		return c.Status(fiber.StatusNotFound).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_NO_TIP",
+			Description: "Chain tip not found",
+		})
 	}
 
-	s.writeSuccess(w, toBlockHeaderResponse(tip))
+	return c.JSON(Response{
+		Status: "success",
+		Value:  toBlockHeaderResponse(tip),
+	})
 }
 
 // HandleFindHeaderHexForHeight returns a header by height
-func (s *Server) HandleFindHeaderHexForHeight(w http.ResponseWriter, r *http.Request) {
-	heightStr := r.URL.Query().Get("height")
+func (s *Server) HandleFindHeaderHexForHeight(c *fiber.Ctx) error {
+	heightStr := c.Query("height")
 	if heightStr == "" {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Missing height parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Missing height parameter",
+		})
 	}
 
 	height, err := strconv.ParseUint(heightStr, 10, 32)
 	if err != nil {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Invalid height parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Invalid height parameter",
+		})
 	}
 
 	tip := s.cm.GetHeight()
 	if uint32(height) < tip-100 {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		c.Set("Cache-Control", "public, max-age=3600")
 	} else {
-		w.Header().Set("Cache-Control", "no-cache")
+		c.Set("Cache-Control", "no-cache")
 	}
 
 	header, err := s.cm.GetHeaderByHeight(uint32(height))
 	if err != nil {
-		s.writeSuccess(w, nil)
-		return
+		return c.JSON(Response{
+			Status: "success",
+			Value:  nil,
+		})
 	}
 
-	s.writeSuccess(w, toBlockHeaderResponse(header))
+	return c.JSON(Response{
+		Status: "success",
+		Value:  toBlockHeaderResponse(header),
+	})
 }
 
 // HandleFindHeaderHexForBlockHash returns a header by hash
-func (s *Server) HandleFindHeaderHexForBlockHash(w http.ResponseWriter, r *http.Request) {
-	hashStr := r.URL.Query().Get("hash")
+func (s *Server) HandleFindHeaderHexForBlockHash(c *fiber.Ctx) error {
+	hashStr := c.Query("hash")
 	if hashStr == "" {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Missing hash parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Missing hash parameter",
+		})
 	}
 
 	hash, err := chainhash.NewHashFromHex(hashStr)
 	if err != nil {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Invalid hash parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Invalid hash parameter",
+		})
 	}
 
 	header, err := s.cm.GetHeaderByHash(hash)
 	if err != nil {
-		s.writeSuccess(w, nil)
-		return
+		return c.JSON(Response{
+			Status: "success",
+			Value:  nil,
+		})
 	}
 
 	tip := s.cm.GetHeight()
 	if header.Height < tip-100 {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		c.Set("Cache-Control", "public, max-age=3600")
 	} else {
-		w.Header().Set("Cache-Control", "no-cache")
+		c.Set("Cache-Control", "no-cache")
 	}
 
-	s.writeSuccess(w, toBlockHeaderResponse(header))
+	return c.JSON(Response{
+		Status: "success",
+		Value:  toBlockHeaderResponse(header),
+	})
 }
 
 // HandleGetHeaders returns multiple headers as concatenated hex
-func (s *Server) HandleGetHeaders(w http.ResponseWriter, r *http.Request) {
-	heightStr := r.URL.Query().Get("height")
-	countStr := r.URL.Query().Get("count")
+func (s *Server) HandleGetHeaders(c *fiber.Ctx) error {
+	heightStr := c.Query("height")
+	countStr := c.Query("count")
 
 	if heightStr == "" || countStr == "" {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Missing height or count parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Missing height or count parameter",
+		})
 	}
 
 	height, err := strconv.ParseUint(heightStr, 10, 32)
 	if err != nil {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Invalid height parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Invalid height parameter",
+		})
 	}
 
 	count, err := strconv.ParseUint(countStr, 10, 32)
 	if err != nil {
-		s.writeError(w, "ERR_INVALID_PARAMS", "Invalid count parameter", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(Response{
+			Status:      "error",
+			Code:        "ERR_INVALID_PARAMS",
+			Description: "Invalid count parameter",
+		})
 	}
 
 	tip := s.cm.GetHeight()
 	if uint32(height) < tip-100 {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		c.Set("Cache-Control", "public, max-age=3600")
 	} else {
-		w.Header().Set("Cache-Control", "no-cache")
+		c.Set("Cache-Control", "no-cache")
 	}
 
 	var hexData string
@@ -266,21 +296,23 @@ func (s *Server) HandleGetHeaders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		headerBytes := header.Header.Bytes()
-
 		hexData += hex.EncodeToString(headerBytes)
 	}
 
-	s.writeSuccess(w, hexData)
+	return c.JSON(Response{
+		Status: "success",
+		Value:  hexData,
+	})
 }
 
 // HandleOpenAPISpec serves the OpenAPI specification
-func (s *Server) HandleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/yaml")
-	w.Write([]byte(openapiSpec))
+func (s *Server) HandleOpenAPISpec(c *fiber.Ctx) error {
+	c.Set("Content-Type", "application/yaml")
+	return c.SendString(openapiSpec)
 }
 
 // HandleSwaggerUI serves the Swagger UI
-func (s *Server) HandleSwaggerUI(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleSwaggerUI(c *fiber.Ctx) error {
 	html := `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -306,22 +338,22 @@ func (s *Server) HandleSwaggerUI(w http.ResponseWriter, r *http.Request) {
     </script>
 </body>
 </html>`
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(html))
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
 }
 
-// SetupRoutes configures all HTTP routes
-func (s *Server) SetupRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/", s.HandleRoot)
-	mux.HandleFunc("/robots.txt", s.HandleRobots)
-	mux.HandleFunc("/docs", s.HandleSwaggerUI)
-	mux.HandleFunc("/openapi.yaml", s.HandleOpenAPISpec)
-	mux.HandleFunc("/getChain", s.HandleGetChain)
-	mux.HandleFunc("/getInfo", s.HandleGetInfo)
-	mux.HandleFunc("/getPresentHeight", s.HandleGetPresentHeight)
-	mux.HandleFunc("/findChainTipHashHex", s.HandleFindChainTipHashHex)
-	mux.HandleFunc("/findChainTipHeaderHex", s.HandleFindChainTipHeaderHex)
-	mux.HandleFunc("/findHeaderHexForHeight", s.HandleFindHeaderHexForHeight)
-	mux.HandleFunc("/findHeaderHexForBlockHash", s.HandleFindHeaderHexForBlockHash)
-	mux.HandleFunc("/getHeaders", s.HandleGetHeaders)
+// SetupRoutes configures all Fiber routes
+func (s *Server) SetupRoutes(app *fiber.App) {
+	app.Get("/", s.HandleRoot)
+	app.Get("/robots.txt", s.HandleRobots)
+	app.Get("/docs", s.HandleSwaggerUI)
+	app.Get("/openapi.yaml", s.HandleOpenAPISpec)
+	app.Get("/network", s.HandleGetChain)
+	app.Get("/info", s.HandleGetInfo)
+	app.Get("/height", s.HandleGetPresentHeight)
+	app.Get("/tip/hash", s.HandleFindChainTipHashHex)
+	app.Get("/tip/header", s.HandleFindChainTipHeaderHex)
+	app.Get("/header/height/", s.HandleFindHeaderHexForHeight)
+	app.Get("/header/hash/", s.HandleFindHeaderHexForBlockHash)
+	app.Get("/headers", s.HandleGetHeaders)
 }

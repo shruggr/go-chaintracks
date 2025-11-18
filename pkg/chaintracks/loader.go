@@ -55,16 +55,14 @@ func parseMetadata(path string) (*CDNMetadata, error) {
 	return &metadata, nil
 }
 
-
 // loadFromLocalFiles restores the chain from local header files
 // No validation is performed - we trust our own checkpoint and exported files
 func (cm *ChainManager) loadFromLocalFiles() error {
-	if cm.localStoragePath == "" {
-		return fmt.Errorf("no local storage path configured")
-	}
-
 	metadataPath := filepath.Join(cm.localStoragePath, cm.network+"NetBlockHeaders.json")
+	log.Printf("Loading checkpoint metadata from: %s", metadataPath)
+
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
+		log.Printf("No checkpoint files found at %s, starting with empty chain", metadataPath)
 		return nil
 	}
 
@@ -72,6 +70,8 @@ func (cm *ChainManager) loadFromLocalFiles() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse local metadata: %w", err)
 	}
+
+	log.Printf("Found %d checkpoint files to load", len(metadata.Files))
 
 	for _, fileEntry := range metadata.Files {
 		filePath := filepath.Join(cm.localStoragePath, fileEntry.FileName)
@@ -124,7 +124,6 @@ func (cm *ChainManager) loadFromLocalFiles() error {
 	return nil
 }
 
-
 // SetChainTip updates the chain tip with a new branch of headers
 // branchHeaders should be ordered from oldest to newest
 // The parent of branchHeaders[0] must exist in our current chain
@@ -162,7 +161,25 @@ func (cm *ChainManager) SetChainTip(branchHeaders []*BlockHeader) error {
 	// Prune orphaned headers older than 100 blocks
 	cm.pruneOrphans()
 
+	// Get channel reference before unlocking
+	msgChan := cm.msgChan
 	cm.mu.Unlock()
+
+	// Publish tip change event outside the lock (non-blocking)
+	if msgChan != nil {
+		// Drain any old tip (we only care about the latest)
+		select {
+		case <-msgChan:
+		default:
+		}
+
+		// Send the new tip (non-blocking)
+		select {
+		case msgChan <- cm.tip:
+		default:
+			// Channel full after drain shouldn't happen, but skip if it does
+		}
+	}
 
 	// Write headers to files
 	startWrite := time.Now()

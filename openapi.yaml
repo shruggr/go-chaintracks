@@ -30,7 +30,7 @@ paths:
               schema:
                 type: string
 
-  /getChain:
+  /network:
     get:
       summary: Get blockchain network
       description: Returns the network name (main or test)
@@ -47,7 +47,7 @@ paths:
                       value:
                         type: string
 
-  /getInfo:
+  /info:
     get:
       summary: Get service information
       description: Returns detailed service state and configuration
@@ -64,7 +64,7 @@ paths:
                       value:
                         $ref: '#/components/schemas/InfoResponse'
 
-  /getPresentHeight:
+  /height:
     get:
       summary: Get current blockchain height
       description: Returns the current height of the blockchain
@@ -87,7 +87,7 @@ paths:
                         type: integer
                         format: uint32
 
-  /findChainTipHashHex:
+  /tip/hash:
     get:
       summary: Get chain tip hash
       description: Returns the hash of the current chain tip
@@ -115,7 +115,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /findChainTipHeaderHex:
+  /tip/header:
     get:
       summary: Get chain tip header
       description: Returns the full header of the current chain tip
@@ -143,13 +143,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /findHeaderHexForHeight:
+  /header/height/{height}:
     get:
       summary: Get header by height
       description: Returns a block header for a specific height
       parameters:
         - name: height
-          in: query
+          in: path
           required: true
           schema:
             type: integer
@@ -181,13 +181,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /findHeaderHexForBlockHash:
+  /header/hash/{hash}:
     get:
       summary: Get header by hash
       description: Returns a block header for a specific block hash
       parameters:
         - name: hash
-          in: query
+          in: path
           required: true
           schema:
             type: string
@@ -218,7 +218,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /getHeaders:
+  /headers:
     get:
       summary: Get multiple headers
       description: Returns multiple block headers concatenated as hex string

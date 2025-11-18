@@ -2,26 +2,26 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"time"
+
+	"github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
+	"github.com/gofiber/fiber/v2"
 )
 
 // DashboardHandler serves a simple status dashboard
 type DashboardHandler struct {
-	server   *Server
-	listener *P2PListener
+	server *Server
 }
 
 // NewDashboardHandler creates a new dashboard handler
-func NewDashboardHandler(server *Server, listener *P2PListener) *DashboardHandler {
+func NewDashboardHandler(server *Server) *DashboardHandler {
 	return &DashboardHandler{
-		server:   server,
-		listener: listener,
+		server: server,
 	}
 }
 
-// ServeHTTP renders the status dashboard
-func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// HandleStatus renders the status dashboard
+func (h *DashboardHandler) HandleStatus(c *fiber.Ctx) error {
 	tip := h.server.cm.GetTip()
 	height := h.server.cm.GetHeight()
 
@@ -35,7 +35,7 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tipChainwork = "N/A"
 	}
 
-	peers := h.listener.GetPeers()
+	peers := h.server.cm.GetPeers()
 	peerCount := len(peers)
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
@@ -154,13 +154,12 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		time.Now().Format("2006-01-02 15:04:05 MST"),
 	)
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(html))
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	return c.SendString(html)
 }
 
 // renderPeerList generates HTML for the peer list
-func (h *DashboardHandler) renderPeerList(peers []PeerInfo) string {
+func (h *DashboardHandler) renderPeerList(peers []chaintracks.PeerInfo) string {
 	if len(peers) == 0 {
 		return `<div style="color: #808080; font-style: italic;">No peers connected</div>`
 	}

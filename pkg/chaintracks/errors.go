@@ -20,7 +20,4 @@ var (
 
 	// ErrInvalidTimestamp is returned when a header has an invalid timestamp
 	ErrInvalidTimestamp = errors.New("invalid timestamp")
-
-	// ErrNotSynced is returned when operations require sync but chain is not synced
-	ErrNotSynced = errors.New("chain not synced")
 )

@@ -9,8 +9,8 @@ import (
 // BlockHeader extends the base block.Header with additional chain-specific metadata
 type BlockHeader struct {
 	*block.Header
-	Height    uint32   // Block height in the chain
-	ChainWork *big.Int // Cumulative chain work up to and including this block
+	Height    uint32   `json:"height"` // Block height in the chain
+	ChainWork *big.Int `json:"-"`      // Cumulative chain work up to and including this block
 }
 
 // CDNMetadata represents the JSON metadata file structure
@@ -35,3 +35,20 @@ type CDNFileEntry struct {
 	SourceURL     string `json:"sourceUrl"`
 }
 
+// BlockMessage represents a block announcement from the P2P network
+type BlockMessage struct {
+	PeerID     string `json:"PeerID"`
+	ClientName string `json:"ClientName"`
+	DataHubURL string `json:"DataHubURL"`
+	Hash       string `json:"Hash"`
+	Height     uint32 `json:"Height"`
+	Header     string `json:"Header"`
+	Coinbase   string `json:"Coinbase"`
+}
+
+// PeerInfo contains information about a connected peer
+type PeerInfo struct {
+	ID    string
+	Name  string
+	Addrs []string
+}

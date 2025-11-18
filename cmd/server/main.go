@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
 	"github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -33,7 +35,9 @@ func main() {
 		log.Fatalf("Failed to initialize headers: %v", err)
 	}
 
-	cm, err := chaintracks.NewChainManager(config.Network, config.StoragePath)
+	// Create chain manager with optional bootstrap URL
+	// Bootstrap happens synchronously in the constructor before returning
+	cm, err := chaintracks.NewChainManager(config.Network, config.StoragePath, config.BootstrapURL)
 	if err != nil {
 		log.Fatalf("Failed to create chain manager: %v", err)
 	}
@@ -45,61 +49,62 @@ func main() {
 		log.Printf("Chain tip: %s at height %d", tip.Header.Hash().String(), tip.Height)
 	}
 
-	// Run bootstrap sync if configured
-	if config.BootstrapURL != "" {
-		log.Printf("Bootstrap URL configured: %s", config.BootstrapURL)
-		if err := BootstrapSync(cm, config.BootstrapURL); err != nil {
-			log.Printf("Bootstrap sync failed: %v (will continue with P2P sync)", err)
-		}
-
-		// Log updated chain state after bootstrap
-		if tip := cm.GetTip(); tip != nil {
-			log.Printf("Chain tip after bootstrap: %s at height %d", tip.Header.Hash().String(), tip.Height)
-		}
-	}
-
 	// Start P2P listener
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener, err := NewP2PListener(cm, config.Network, config.StoragePath)
+	blockMsgChan, err := cm.Start(ctx)
 	if err != nil {
-		log.Fatalf("Failed to create P2P listener: %v", err)
-	}
-
-	if err := listener.Start(ctx); err != nil {
-		log.Fatalf("Failed to start P2P listener: %v", err)
+		log.Fatalf("Failed to start P2P: %v", err)
 	}
 	log.Printf("P2P listener started for network: %s", config.Network)
 
+	// Optional: Listen to tip changes for custom handling
+	go func() {
+		for tip := range blockMsgChan {
+			// Custom event handling can be added here
+			log.Printf("Chain tip changed: height=%d hash=%s", tip.Height, tip.Hash().String())
+		}
+	}()
+
 	server := NewServer(cm)
 
-	mux := http.NewServeMux()
-	server.SetupRoutes(mux)
+	// Create Fiber app
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+	})
+
+	// Add middleware
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "*",
+		AllowMethods: "GET,POST,OPTIONS",
+	}))
+
+	app.Use(logger.New(logger.Config{
+		Format: "${method} ${path} - ${status} (${latency})\n",
+	}))
+
+	// Setup routes
+	server.SetupRoutes(app)
 
 	// Add dashboard
-	dashboard := NewDashboardHandler(server, listener)
-	mux.Handle("/status", dashboard)
-
-	handler := loggingMiddleware(corsMiddleware(mux))
+	dashboard := NewDashboardHandler(server)
+	app.Get("/status", dashboard.HandleStatus)
 
 	addr := fmt.Sprintf(":%d", config.Port)
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: handler,
-	}
 
 	go func() {
 		log.Printf("Server listening on http://localhost%s", addr)
 		log.Printf("Available endpoints:")
 		log.Printf("  GET  http://localhost%s/status - Status Dashboard", addr)
 		log.Printf("  GET  http://localhost%s/docs - API Documentation (Swagger UI)", addr)
-		log.Printf("  GET  http://localhost%s/getInfo", addr)
-		log.Printf("  GET  http://localhost%s/getPresentHeight", addr)
-		log.Printf("  GET  http://localhost%s/findChainTipHeaderHex", addr)
+		log.Printf("  GET  http://localhost%s/info - Service information", addr)
+		log.Printf("  GET  http://localhost%s/height - Current blockchain height", addr)
+		log.Printf("  GET  http://localhost%s/tip/header - Chain tip header", addr)
 		log.Printf("Press Ctrl+C to stop")
 
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := app.Listen(addr); err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
@@ -110,10 +115,10 @@ func main() {
 
 	log.Println("Shutting down gracefully...")
 	cancel()
-	if err := listener.Close(); err != nil {
-		log.Printf("Error closing P2P listener: %v", err)
+	if err := cm.Stop(); err != nil {
+		log.Printf("Error closing P2P: %v", err)
 	}
-	if err := httpServer.Close(); err != nil {
+	if err := app.Shutdown(); err != nil {
 		log.Printf("Error closing server: %v", err)
 	}
 	log.Println("Server stopped")
