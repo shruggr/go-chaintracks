@@ -85,19 +85,18 @@ func main() {
 		Format: "${method} ${path} - ${status} (${latency})\n",
 	}))
 
-	// Setup routes
-	server.SetupRoutes(app)
-
-	// Add dashboard
+	// Create dashboard
 	dashboard := NewDashboardHandler(server)
-	app.Get("/status", dashboard.HandleStatus)
+
+	// Setup routes
+	server.SetupRoutes(app, dashboard)
 
 	addr := fmt.Sprintf(":%d", config.Port)
 
 	go func() {
 		log.Printf("Server listening on http://localhost%s", addr)
 		log.Printf("Available endpoints:")
-		log.Printf("  GET  http://localhost%s/status - Status Dashboard", addr)
+		log.Printf("  GET  http://localhost%s/ - Status Dashboard", addr)
 		log.Printf("  GET  http://localhost%s/docs - API Documentation (Swagger UI)", addr)
 		log.Printf("  GET  http://localhost%s/info - Service information", addr)
 		log.Printf("  GET  http://localhost%s/height - Current blockchain height", addr)

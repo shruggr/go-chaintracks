@@ -25,7 +25,8 @@ go get github.com/bsv-blockchain/go-chaintracks
 import "github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
 
 // Create chain manager with local storage
-cm, err := chaintracks.NewChainManager("main", "~/.chaintracks")
+// Network options: "main", "test", "teratest"
+cm, err := chaintracks.NewChainManager("main", "~/.chaintracks", "")
 if err != nil {
     log.Fatal(err)
 }
@@ -63,14 +64,14 @@ Server starts on port 3011 with Swagger UI at `/docs`.
 
 ## API Endpoints
 
-- `GET /getChain` - Network name
-- `GET /getInfo` - Service state and configuration
-- `GET /getPresentHeight` - Current blockchain height
-- `GET /findChainTipHashHex` - Chain tip hash
-- `GET /findChainTipHeaderHex` - Chain tip header object
-- `GET /findHeaderHexForHeight?height=N` - Header by height
-- `GET /findHeaderHexForBlockHash?hash=H` - Header by hash
-- `GET /getHeaders?height=N&count=C` - Multiple headers
+- `GET /network` - Network name (main, test, or teratest)
+- `GET /info` - Service state and configuration
+- `GET /height` - Current blockchain height
+- `GET /tip/hash` - Chain tip hash
+- `GET /tip/header` - Chain tip header object
+- `GET /header/height/?height=N` - Header by height (query param)
+- `GET /header/hash/?hash=H` - Header by hash (query param)
+- `GET /headers?height=N&count=C` - Multiple headers
 
 Full API documentation available at `/docs` when running.
 

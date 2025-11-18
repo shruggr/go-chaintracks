@@ -343,8 +343,8 @@ func (s *Server) HandleSwaggerUI(c *fiber.Ctx) error {
 }
 
 // SetupRoutes configures all Fiber routes
-func (s *Server) SetupRoutes(app *fiber.App) {
-	app.Get("/", s.HandleRoot)
+func (s *Server) SetupRoutes(app *fiber.App, dashboard *DashboardHandler) {
+	app.Get("/", dashboard.HandleStatus)
 	app.Get("/robots.txt", s.HandleRobots)
 	app.Get("/docs", s.HandleSwaggerUI)
 	app.Get("/openapi.yaml", s.HandleOpenAPISpec)
