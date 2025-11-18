@@ -1,13 +1,13 @@
 {
   "rootFolder": "",
-  "jsonFilename": "testnetNetBlockHeaders.json",
+  "jsonFilename": "testNetBlockHeaders.json",
   "headersPerFile": 100000,
   "files": [
     {
-      "chain": "testnet",
+      "chain": "test",
       "count": 1,
       "fileHash": "",
-      "fileName": "testnetNet_0.headers",
+      "fileName": "testNet_0.headers",
       "firstHeight": 0,
       "lastChainWork": "0000000000000000000000000000000000000000000000000000000100010001",
       "lastHash": "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943",
