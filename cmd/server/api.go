@@ -108,6 +108,7 @@ func (s *Server) HandleTipStream(c *fiber.Ctx) error {
 			s.sseClientsMu.Unlock()
 		}()
 
+		// Send initial tip
 		tip := s.cm.GetTip()
 		if tip != nil {
 			data, err := json.Marshal(tip)
@@ -117,7 +118,21 @@ func (s *Server) HandleTipStream(c *fiber.Ctx) error {
 			}
 		}
 
-		<-c.Context().Done()
+		// Keep connection alive with periodic keepalive messages
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Send keepalive comment
+				fmt.Fprintf(w, ": keepalive\n\n")
+				if err := w.Flush(); err != nil {
+					// Connection closed
+					return
+				}
+			}
+		}
 	}))
 
 	return nil
@@ -148,9 +163,16 @@ func (s *Server) HandleRobots(c *fiber.Ctx) error {
 
 // HandleGetNetwork returns the network name
 func (s *Server) HandleGetNetwork(c *fiber.Ctx) error {
+	network, err := s.cm.GetNetwork()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(Response{
+			Status: "error",
+			Value:  err.Error(),
+		})
+	}
 	return c.JSON(Response{
 		Status: "success",
-		Value:  s.cm.GetNetwork(),
+		Value:  network,
 	})
 }
 
