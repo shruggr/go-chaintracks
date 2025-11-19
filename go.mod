@@ -133,6 +133,6 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-// replace github.com/bsv-blockchain/go-sdk => github.com/bsv-blockchain/go-sdk v1.2.12-0.20251113205800-18a86464d590
+replace github.com/bsv-blockchain/go-sdk => github.com/bsv-blockchain/go-sdk v1.2.12-0.20251119144503-b56b04569fb3
 
-replace github.com/bsv-blockchain/go-sdk => ../go-sdk
+// replace github.com/bsv-blockchain/go-sdk => ../go-sdk
