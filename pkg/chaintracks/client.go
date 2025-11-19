@@ -13,31 +13,31 @@ import (
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 )
 
-// ChainClient is an HTTP client for chaintracks server with SSE support
-type ChainClient struct {
-	baseURL     string
-	httpClient  *http.Client
-	currentTip  *BlockHeader
-	tipMu       sync.RWMutex
-	msgChan     chan *BlockHeader
-	cancelFunc  context.CancelFunc
+// Client is an HTTP client for chaintracks server with SSE support
+type Client struct {
+	baseURL    string
+	httpClient *http.Client
+	currentTip *BlockHeader
+	tipMu      sync.RWMutex
+	msgChan    chan *BlockHeader
+	cancelFunc context.CancelFunc
 }
 
-// NewChainClient creates a new HTTP client for chaintracks server
-func NewChainClient(baseURL string) *ChainClient {
+// NewClient creates a new HTTP client for chaintracks server
+func NewClient(baseURL string) *Client {
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 		baseURL = "http://" + baseURL
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	return &ChainClient{
+	return &Client{
 		baseURL:    baseURL,
 		httpClient: &http.Client{},
 	}
 }
 
 // Start connects to the SSE stream and returns a channel for tip updates
-func (cc *ChainClient) Start(ctx context.Context) (<-chan *BlockHeader, error) {
+func (cc *Client) Start(ctx context.Context) (<-chan *BlockHeader, error) {
 	cc.msgChan = make(chan *BlockHeader, 1)
 
 	childCtx, cancel := context.WithCancel(ctx)
@@ -68,7 +68,7 @@ func (cc *ChainClient) Start(ctx context.Context) (<-chan *BlockHeader, error) {
 }
 
 // readSSE reads Server-Sent Events from the response body
-func (cc *ChainClient) readSSE(ctx context.Context, body io.ReadCloser) {
+func (cc *Client) readSSE(ctx context.Context, body io.ReadCloser) {
 	defer body.Close()
 	defer close(cc.msgChan)
 
@@ -125,7 +125,7 @@ func (cc *ChainClient) readSSE(ctx context.Context, body io.ReadCloser) {
 }
 
 // Stop closes the SSE connection
-func (cc *ChainClient) Stop() error {
+func (cc *Client) Stop() error {
 	if cc.cancelFunc != nil {
 		cc.cancelFunc()
 	}
@@ -133,14 +133,14 @@ func (cc *ChainClient) Stop() error {
 }
 
 // GetTip returns the current chain tip
-func (cc *ChainClient) GetTip() *BlockHeader {
+func (cc *Client) GetTip() *BlockHeader {
 	cc.tipMu.RLock()
 	defer cc.tipMu.RUnlock()
 	return cc.currentTip
 }
 
 // GetHeight returns the current chain height
-func (cc *ChainClient) GetHeight() uint32 {
+func (cc *Client) GetHeight() uint32 {
 	cc.tipMu.RLock()
 	defer cc.tipMu.RUnlock()
 	if cc.currentTip == nil {
@@ -150,19 +150,19 @@ func (cc *ChainClient) GetHeight() uint32 {
 }
 
 // GetHeaderByHeight retrieves a header by height from the server
-func (cc *ChainClient) GetHeaderByHeight(height uint32) (*BlockHeader, error) {
+func (cc *Client) GetHeaderByHeight(height uint32) (*BlockHeader, error) {
 	url := fmt.Sprintf("%s/v2/header/height/%d", cc.baseURL, height)
 	return cc.fetchHeader(url)
 }
 
 // GetHeaderByHash retrieves a header by hash from the server
-func (cc *ChainClient) GetHeaderByHash(hash *chainhash.Hash) (*BlockHeader, error) {
+func (cc *Client) GetHeaderByHash(hash *chainhash.Hash) (*BlockHeader, error) {
 	url := fmt.Sprintf("%s/v2/header/hash/%s", cc.baseURL, hash.String())
 	return cc.fetchHeader(url)
 }
 
 // fetchHeader is a helper to fetch and parse a header from the server
-func (cc *ChainClient) fetchHeader(url string) (*BlockHeader, error) {
+func (cc *Client) fetchHeader(url string) (*BlockHeader, error) {
 	resp, err := cc.httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch header: %w", err)
@@ -174,7 +174,7 @@ func (cc *ChainClient) fetchHeader(url string) (*BlockHeader, error) {
 	}
 
 	var response struct {
-		Status string        `json:"status"`
+		Status string       `json:"status"`
 		Value  *BlockHeader `json:"value"`
 	}
 
@@ -190,7 +190,7 @@ func (cc *ChainClient) fetchHeader(url string) (*BlockHeader, error) {
 }
 
 // IsValidRootForHeight implements the ChainTracker interface
-func (cc *ChainClient) IsValidRootForHeight(ctx context.Context, root *chainhash.Hash, height uint32) (bool, error) {
+func (cc *Client) IsValidRootForHeight(ctx context.Context, root *chainhash.Hash, height uint32) (bool, error) {
 	header, err := cc.GetHeaderByHeight(height)
 	if err != nil {
 		return false, err
@@ -199,12 +199,12 @@ func (cc *ChainClient) IsValidRootForHeight(ctx context.Context, root *chainhash
 }
 
 // CurrentHeight implements the ChainTracker interface
-func (cc *ChainClient) CurrentHeight(ctx context.Context) (uint32, error) {
+func (cc *Client) CurrentHeight(ctx context.Context) (uint32, error) {
 	return cc.GetHeight(), nil
 }
 
 // GetNetwork returns the network name from the server
-func (cc *ChainClient) GetNetwork() (string, error) {
+func (cc *Client) GetNetwork() (string, error) {
 	resp, err := cc.httpClient.Get(cc.baseURL + "/v2/network")
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch network: %w", err)
