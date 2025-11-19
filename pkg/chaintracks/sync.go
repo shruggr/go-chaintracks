@@ -81,7 +81,7 @@ func (cm *ChainManager) SyncFromRemoteTip(remoteTipHash chainhash.Hash, baseURL 
 		}
 
 		// Continue from the last header's parent
-		currentHash = headers[len(headers)-1].PrevBlock
+		currentHash = headers[len(headers)-1].PrevHash
 	}
 
 	if commonAncestor == nil {
@@ -113,6 +113,7 @@ func (cm *ChainManager) SyncFromRemoteTip(remoteTipHash chainhash.Hash, baseURL 
 		blockHeaders[i] = &BlockHeader{
 			Header:    header,
 			Height:    currentHeight,
+			Hash:      header.Hash(),
 			ChainWork: new(big.Int).Set(currentChainWork),
 		}
 		currentHeight++

@@ -2,11 +2,11 @@ openapi: 3.0.3
 info:
   title: Chaintracks Server API
   description: REST API for querying Bitcoin SV blockchain headers
-  version: 0.1.0
+  version: 2.0.0
 servers:
   - url: /
 paths:
-  /network:
+  /v2/network:
     get:
       summary: Get blockchain network
       description: Returns the network name (main or test)
@@ -23,24 +23,7 @@ paths:
                       value:
                         type: string
 
-  /info:
-    get:
-      summary: Get service information
-      description: Returns detailed service state and configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      value:
-                        $ref: '#/components/schemas/InfoResponse'
-
-  /height:
+  /v2/height:
     get:
       summary: Get current blockchain height
       description: Returns the current height of the blockchain
@@ -63,7 +46,7 @@ paths:
                         type: integer
                         format: uint32
 
-  /tip/hash:
+  /v2/tip/hash:
     get:
       summary: Get chain tip hash
       description: Returns the hash of the current chain tip
@@ -91,7 +74,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /tip/header:
+  /v2/tip/header:
     get:
       summary: Get chain tip header
       description: Returns the full header of the current chain tip
@@ -119,7 +102,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /header/height/{height}:
+  /v2/header/height/{height}:
     get:
       summary: Get header by height
       description: Returns a block header for a specific height
@@ -157,7 +140,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /header/hash/{hash}:
+  /v2/header/hash/{hash}:
     get:
       summary: Get header by hash
       description: Returns a block header for a specific block hash
@@ -194,7 +177,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /headers:
+  /v2/headers:
     get:
       summary: Get multiple headers
       description: Returns multiple block headers concatenated as hex string
@@ -313,57 +296,3 @@ components:
         hash:
           type: string
           description: Block hash
-
-    InfoResponse:
-      type: object
-      required:
-        - chain
-        - heightBulk
-        - heightLive
-        - storage
-        - bulkIngestors
-        - liveIngestors
-        - packages
-      properties:
-        chain:
-          type: string
-          description: Network name (main or test)
-        heightBulk:
-          type: integer
-          format: uint32
-          description: Height of bulk loaded headers
-        heightLive:
-          type: integer
-          format: uint32
-          description: Height of live synced headers
-        storage:
-          type: string
-          description: Storage type
-        bulkIngestors:
-          type: array
-          items:
-            type: string
-          description: List of bulk ingestor sources
-        liveIngestors:
-          type: array
-          items:
-            type: string
-          description: List of live ingestor sources
-        packages:
-          type: array
-          items:
-            $ref: '#/components/schemas/Package'
-          description: Package version information
-
-    Package:
-      type: object
-      required:
-        - name
-        - version
-      properties:
-        name:
-          type: string
-          description: Package name
-        version:
-          type: string
-          description: Package version

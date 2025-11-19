@@ -28,7 +28,7 @@ func (h *DashboardHandler) HandleStatus(c *fiber.Ctx) error {
 	var tipHash string
 	var tipChainwork string
 	if tip != nil {
-		tipHash = tip.Hash().String()
+		tipHash = tip.Hash.String()
 		tipChainwork = tip.ChainWork.String()
 	} else {
 		tipHash = "N/A"

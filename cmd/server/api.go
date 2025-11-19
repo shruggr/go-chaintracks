@@ -1,13 +1,20 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/gofiber/fiber/v2"
+	"github.com/valyala/fasthttp"
 )
 
 //go:embed openapi.yaml
@@ -15,12 +22,105 @@ var openapiSpec string
 
 // Server wraps the ChainManager with Fiber handlers
 type Server struct {
-	cm *chaintracks.ChainManager
+	cm           *chaintracks.ChainManager
+	sseClients   map[int64]*bufio.Writer
+	sseClientsMu sync.RWMutex
 }
 
 // NewServer creates a new API server
 func NewServer(cm *chaintracks.ChainManager) *Server {
-	return &Server{cm: cm}
+	return &Server{
+		cm:         cm,
+		sseClients: make(map[int64]*bufio.Writer),
+	}
+}
+
+// StartBroadcasting listens to ChainManager tip changes and broadcasts to all SSE clients
+func (s *Server) StartBroadcasting(ctx context.Context, tipChan <-chan *chaintracks.BlockHeader) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case tip := <-tipChan:
+				if tip == nil {
+					continue
+				}
+				s.broadcastTip(tip)
+			}
+		}
+	}()
+}
+
+// broadcastTip sends a tip update to all connected SSE clients
+func (s *Server) broadcastTip(tip *chaintracks.BlockHeader) {
+	data, err := json.Marshal(tip)
+	if err != nil {
+		return
+	}
+
+	sseMessage := fmt.Sprintf("data: %s\n\n", string(data))
+
+	s.sseClientsMu.RLock()
+	clientsCopy := make(map[int64]*bufio.Writer, len(s.sseClients))
+	for id, writer := range s.sseClients {
+		clientsCopy[id] = writer
+	}
+	s.sseClientsMu.RUnlock()
+
+	var failedClients []int64
+	for id, writer := range clientsCopy {
+		if _, err := fmt.Fprint(writer, sseMessage); err != nil {
+			failedClients = append(failedClients, id)
+			continue
+		}
+		if err := writer.Flush(); err != nil {
+			failedClients = append(failedClients, id)
+		}
+	}
+
+	if len(failedClients) > 0 {
+		s.sseClientsMu.Lock()
+		for _, id := range failedClients {
+			delete(s.sseClients, id)
+		}
+		s.sseClientsMu.Unlock()
+	}
+}
+
+// HandleTipStream handles SSE connections for tip updates
+func (s *Server) HandleTipStream(c *fiber.Ctx) error {
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("Transfer-Encoding", "chunked")
+
+	c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
+		clientID := time.Now().UnixNano()
+
+		s.sseClientsMu.Lock()
+		s.sseClients[clientID] = w
+		s.sseClientsMu.Unlock()
+
+		defer func() {
+			s.sseClientsMu.Lock()
+			delete(s.sseClients, clientID)
+			s.sseClientsMu.Unlock()
+		}()
+
+		tip := s.cm.GetTip()
+		if tip != nil {
+			data, err := json.Marshal(tip)
+			if err == nil {
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				w.Flush()
+			}
+		}
+
+		<-c.Context().Done()
+	}))
+
+	return nil
 }
 
 // Response represents the standard API response format
@@ -31,49 +131,6 @@ type Response struct {
 	Description string      `json:"description,omitempty"`
 }
 
-// BlockHeaderResponse represents a block header in API format
-type BlockHeaderResponse struct {
-	Version      int32           `json:"version"`
-	PreviousHash *chainhash.Hash `json:"previousHash"`
-	MerkleRoot   *chainhash.Hash `json:"merkleRoot"`
-	Time         uint32          `json:"time"`
-	Bits         uint32          `json:"bits"`
-	Nonce        uint32          `json:"nonce"`
-	Height       uint32          `json:"height"`
-	Hash         *chainhash.Hash `json:"hash"`
-}
-
-// InfoResponse represents the service info response
-type InfoResponse struct {
-	Chain         string    `json:"chain"`
-	HeightBulk    uint32    `json:"heightBulk"`
-	HeightLive    uint32    `json:"heightLive"`
-	Storage       string    `json:"storage"`
-	BulkIngestors []string  `json:"bulkIngestors"`
-	LiveIngestors []string  `json:"liveIngestors"`
-	Packages      []Package `json:"packages"`
-}
-
-// Package represents a package version info
-type Package struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-// toBlockHeaderResponse converts a BlockHeader to API response format
-func toBlockHeaderResponse(bh *chaintracks.BlockHeader) BlockHeaderResponse {
-	hash := bh.Header.Hash()
-	return BlockHeaderResponse{
-		Version:      bh.Header.Version,
-		PreviousHash: &bh.Header.PrevBlock,
-		MerkleRoot:   &bh.Header.MerkleRoot,
-		Time:         bh.Header.Timestamp,
-		Bits:         bh.Header.Bits,
-		Nonce:        bh.Header.Nonce,
-		Height:       bh.Height,
-		Hash:         &hash,
-	}
-}
 
 // HandleRoot returns service identification
 func (s *Server) HandleRoot(c *fiber.Ctx) error {
@@ -89,38 +146,17 @@ func (s *Server) HandleRobots(c *fiber.Ctx) error {
 	return c.SendString("User-agent: *\nDisallow: /\n")
 }
 
-// HandleGetChain returns the network name
-func (s *Server) HandleGetChain(c *fiber.Ctx) error {
+// HandleGetNetwork returns the network name
+func (s *Server) HandleGetNetwork(c *fiber.Ctx) error {
 	return c.JSON(Response{
 		Status: "success",
 		Value:  s.cm.GetNetwork(),
 	})
 }
 
-// HandleGetInfo returns service state information
-func (s *Server) HandleGetInfo(c *fiber.Ctx) error {
-	height := s.cm.GetHeight()
 
-	info := InfoResponse{
-		Chain:         s.cm.GetNetwork(),
-		HeightBulk:    height,
-		HeightLive:    height,
-		Storage:       "memory",
-		BulkIngestors: []string{"local-files"},
-		LiveIngestors: []string{},
-		Packages: []Package{
-			{Name: "go-chaintracks", Version: "0.1.0"},
-		},
-	}
-
-	return c.JSON(Response{
-		Status: "success",
-		Value:  info,
-	})
-}
-
-// HandleGetPresentHeight returns the current blockchain height
-func (s *Server) HandleGetPresentHeight(c *fiber.Ctx) error {
+// HandleGetHeight returns the current blockchain height
+func (s *Server) HandleGetHeight(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "public, max-age=60")
 	return c.JSON(Response{
 		Status: "success",
@@ -128,8 +164,8 @@ func (s *Server) HandleGetPresentHeight(c *fiber.Ctx) error {
 	})
 }
 
-// HandleFindChainTipHashHex returns the chain tip hash
-func (s *Server) HandleFindChainTipHashHex(c *fiber.Ctx) error {
+// HandleGetTipHash returns the chain tip hash
+func (s *Server) HandleGetTipHash(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "no-cache")
 
 	tip := s.cm.GetTip()
@@ -148,8 +184,8 @@ func (s *Server) HandleFindChainTipHashHex(c *fiber.Ctx) error {
 	})
 }
 
-// HandleFindChainTipHeaderHex returns the full chain tip header
-func (s *Server) HandleFindChainTipHeaderHex(c *fiber.Ctx) error {
+// HandleGetTipHeader returns the full chain tip header
+func (s *Server) HandleGetTipHeader(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "no-cache")
 
 	tip := s.cm.GetTip()
@@ -163,13 +199,13 @@ func (s *Server) HandleFindChainTipHeaderHex(c *fiber.Ctx) error {
 
 	return c.JSON(Response{
 		Status: "success",
-		Value:  toBlockHeaderResponse(tip),
+		Value:  tip,
 	})
 }
 
-// HandleFindHeaderHexForHeight returns a header by height
-func (s *Server) HandleFindHeaderHexForHeight(c *fiber.Ctx) error {
-	heightStr := c.Query("height")
+// HandleGetHeaderByHeight returns a header by height
+func (s *Server) HandleGetHeaderByHeight(c *fiber.Ctx) error {
+	heightStr := c.Params("height")
 	if heightStr == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Status:      "error",
@@ -204,13 +240,13 @@ func (s *Server) HandleFindHeaderHexForHeight(c *fiber.Ctx) error {
 
 	return c.JSON(Response{
 		Status: "success",
-		Value:  toBlockHeaderResponse(header),
+		Value:  header,
 	})
 }
 
-// HandleFindHeaderHexForBlockHash returns a header by hash
-func (s *Server) HandleFindHeaderHexForBlockHash(c *fiber.Ctx) error {
-	hashStr := c.Query("hash")
+// HandleGetHeaderByHash returns a header by hash
+func (s *Server) HandleGetHeaderByHash(c *fiber.Ctx) error {
+	hashStr := c.Params("hash")
 	if hashStr == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Status:      "error",
@@ -245,7 +281,7 @@ func (s *Server) HandleFindHeaderHexForBlockHash(c *fiber.Ctx) error {
 
 	return c.JSON(Response{
 		Status: "success",
-		Value:  toBlockHeaderResponse(header),
+		Value:  header,
 	})
 }
 
@@ -329,6 +365,7 @@ func (s *Server) HandleSwaggerUI(c *fiber.Ctx) error {
                 url: '/openapi.yaml',
                 dom_id: '#swagger-ui',
                 deepLinking: true,
+                tryItOutEnabled: true,
                 presets: [
                     SwaggerUIBundle.presets.apis,
                     SwaggerUIBundle.SwaggerUIStandalonePreset
@@ -348,12 +385,14 @@ func (s *Server) SetupRoutes(app *fiber.App, dashboard *DashboardHandler) {
 	app.Get("/robots.txt", s.HandleRobots)
 	app.Get("/docs", s.HandleSwaggerUI)
 	app.Get("/openapi.yaml", s.HandleOpenAPISpec)
-	app.Get("/network", s.HandleGetChain)
-	app.Get("/info", s.HandleGetInfo)
-	app.Get("/height", s.HandleGetPresentHeight)
-	app.Get("/tip/hash", s.HandleFindChainTipHashHex)
-	app.Get("/tip/header", s.HandleFindChainTipHeaderHex)
-	app.Get("/header/height/", s.HandleFindHeaderHexForHeight)
-	app.Get("/header/hash/", s.HandleFindHeaderHexForBlockHash)
-	app.Get("/headers", s.HandleGetHeaders)
+
+	v2 := app.Group("/v2")
+	v2.Get("/network", s.HandleGetNetwork)
+	v2.Get("/height", s.HandleGetHeight)
+	v2.Get("/tip/hash", s.HandleGetTipHash)
+	v2.Get("/tip/header", s.HandleGetTipHeader)
+	v2.Get("/tip/stream", s.HandleTipStream)
+	v2.Get("/header/height/:height", s.HandleGetHeaderByHeight)
+	v2.Get("/header/hash/:hash", s.HandleGetHeaderByHash)
+	v2.Get("/headers", s.HandleGetHeaders)
 }

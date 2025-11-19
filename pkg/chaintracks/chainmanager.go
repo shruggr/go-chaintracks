@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/bsv-blockchain/go-sdk/chainhash"
 	p2p "github.com/bsv-blockchain/go-p2p-message-bus"
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 )
 
 // ChainManager is the main orchestrator for chain management
@@ -137,8 +137,7 @@ func (cm *ChainManager) AddHeader(header *BlockHeader) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	hash := header.Hash()
-	cm.byHash[hash] = header
+	cm.byHash[header.Hash] = header
 
 	return nil
 }
