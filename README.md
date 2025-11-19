@@ -7,7 +7,8 @@ A Go implementation of blockchain header management for Bitcoin SV (BSV).
 - In-memory chain tracking with height and hash indexes
 - Chainwork calculation and comparison
 - Automatic orphan pruning (keeps last 100 blocks)
-- P2P live sync via message bus
+- P2P live sync with automatic updates
+- Optional bootstrap sync from remote node
 - REST API compatible with TypeScript wallet-toolbox
 - File-based persistence with metadata
 
@@ -26,23 +27,34 @@ import "github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
 
 // Create chain manager with local storage
 // Network options: "main", "test", "teratest"
-cm, err := chaintracks.NewChainManager("main", "~/.chaintracks", "")
+// Optional bootstrap URL for initial sync
+cm, err := chaintracks.NewChainManager("main", "~/.chaintracks", "https://node.example.com")
 if err != nil {
     log.Fatal(err)
 }
 
-// Get current chain tip
+// Start P2P sync for automatic updates
+ctx := context.Background()
+tipChanges, err := cm.Start(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Listen for tip changes (optional)
+go func() {
+    for tip := range tipChanges {
+        log.Printf("New tip: height=%d hash=%s", tip.Height, tip.Hash())
+    }
+}()
+
+// Query methods
 tip := cm.GetTip()
 height := cm.GetHeight()
-
-// Get header by height
 header, err := cm.GetHeaderByHeight(123456)
-
-// Get header by hash
 header, err := cm.GetHeaderByHash(&hash)
 
-// Update chain tip with new headers
-err = cm.SetChainTip(newHeaders)
+// Cleanup
+defer cm.Stop()
 ```
 
 ### As a Server
