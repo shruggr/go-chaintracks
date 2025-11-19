@@ -35,6 +35,11 @@ func (h *DashboardHandler) HandleStatus(c *fiber.Ctx) error {
 		tipChainwork = "N/A"
 	}
 
+	network, err := h.server.cm.GetNetwork()
+	if err != nil {
+		network = "unknown"
+	}
+
 	peers := h.server.cm.GetPeers()
 	peerCount := len(peers)
 
@@ -145,7 +150,7 @@ func (h *DashboardHandler) HandleStatus(c *fiber.Ctx) error {
     </div>
 </body>
 </html>`,
-		h.server.cm.GetNetwork(),
+		network,
 		height,
 		tipHash,
 		tipChainwork,

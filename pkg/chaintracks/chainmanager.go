@@ -143,8 +143,8 @@ func (cm *ChainManager) AddHeader(header *BlockHeader) error {
 }
 
 // GetNetwork returns the network name
-func (cm *ChainManager) GetNetwork() string {
-	return cm.network
+func (cm *ChainManager) GetNetwork() (string, error) {
+	return cm.network, nil
 }
 
 // pruneOrphans removes old orphaned headers (must be called with lock held)
