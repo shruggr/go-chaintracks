@@ -133,7 +133,7 @@ func (cm *ChainManager) handleBlockMessage(ctx context.Context, data []byte) err
 	}
 
 	// Check if parent exists in our chain
-	parentHash := header.PrevBlock
+	parentHash := header.PrevHash
 	_, err = cm.GetHeaderByHash(&parentHash)
 	if err == nil {
 		// Parent exists - simple case
@@ -148,7 +148,7 @@ func (cm *ChainManager) handleBlockMessage(ctx context.Context, data []byte) err
 // addBlockToChain processes a block and evaluates if it becomes the new chain tip
 func (cm *ChainManager) addBlockToChain(header *block.Header, height uint32) error {
 	// Get parent to calculate chainwork
-	parentHash := header.PrevBlock
+	parentHash := header.PrevHash
 	parentHeader, err := cm.GetHeaderByHash(&parentHash)
 	if err != nil {
 		return fmt.Errorf("failed to get parent header: %w", err)
@@ -162,6 +162,7 @@ func (cm *ChainManager) addBlockToChain(header *block.Header, height uint32) err
 	blockHeader := &BlockHeader{
 		Header:    header,
 		Height:    height,
+		Hash:      header.Hash(),
 		ChainWork: chainWork,
 	}
 

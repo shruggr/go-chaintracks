@@ -59,15 +59,10 @@ func main() {
 	}
 	log.Printf("P2P listener started for network: %s", config.Network)
 
-	// Optional: Listen to tip changes for custom handling
-	go func() {
-		for tip := range blockMsgChan {
-			// Custom event handling can be added here
-			log.Printf("Chain tip changed: height=%d hash=%s", tip.Height, tip.Hash().String())
-		}
-	}()
-
 	server := NewServer(cm)
+
+	// Start broadcasting tip changes to SSE clients
+	server.StartBroadcasting(ctx, blockMsgChan)
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
@@ -98,9 +93,10 @@ func main() {
 		log.Printf("Available endpoints:")
 		log.Printf("  GET  http://localhost%s/ - Status Dashboard", addr)
 		log.Printf("  GET  http://localhost%s/docs - API Documentation (Swagger UI)", addr)
-		log.Printf("  GET  http://localhost%s/info - Service information", addr)
-		log.Printf("  GET  http://localhost%s/height - Current blockchain height", addr)
-		log.Printf("  GET  http://localhost%s/tip/header - Chain tip header", addr)
+		log.Printf("  GET  http://localhost%s/v2/network - Network name", addr)
+		log.Printf("  GET  http://localhost%s/v2/height - Current blockchain height", addr)
+		log.Printf("  GET  http://localhost%s/v2/tip/header - Chain tip header", addr)
+		log.Printf("  GET  http://localhost%s/v2/tip/stream - SSE stream for tip updates", addr)
 		log.Printf("Press Ctrl+C to stop")
 
 		if err := app.Listen(addr); err != nil {

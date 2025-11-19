@@ -110,6 +110,7 @@ func (cm *ChainManager) loadFromLocalFiles() error {
 			blockHeader := &BlockHeader{
 				Header:    header,
 				Height:    height,
+				Hash:      header.Hash(),
 				ChainWork: chainWork,
 			}
 
@@ -137,7 +138,7 @@ func (cm *ChainManager) SetChainTip(branchHeaders []*BlockHeader) error {
 
 	// Update byHeight for all blocks in the new branch
 	for _, header := range branchHeaders {
-		hash := header.Hash()
+		// hash := header.Hash()
 
 		// Ensure slice is large enough
 		for uint32(len(cm.byHeight)) <= header.Height {
@@ -145,8 +146,8 @@ func (cm *ChainManager) SetChainTip(branchHeaders []*BlockHeader) error {
 		}
 
 		// Update byHeight and byHash
-		cm.byHeight[header.Height] = hash
-		cm.byHash[hash] = header
+		cm.byHeight[header.Height] = header.Hash
+		cm.byHash[header.Hash] = header
 	}
 
 	// Clear any blocks after the new tip (handles reorg to shorter chain)
@@ -292,9 +293,7 @@ func (cm *ChainManager) updateMetadataForTip() error {
 			FileName:      fmt.Sprintf("%sNet_%d.headers", cm.network, i),
 			FirstHeight:   i * 100000,
 			LastChainWork: "0000000000000000000000000000000000000000000000000000000000000000",
-			LastHash:      "0000000000000000000000000000000000000000000000000000000000000000",
 			PrevChainWork: "0000000000000000000000000000000000000000000000000000000000000000",
-			PrevHash:      "0000000000000000000000000000000000000000000000000000000000000000",
 			SourceURL:     "",
 		})
 	}
@@ -303,14 +302,14 @@ func (cm *ChainManager) updateMetadataForTip() error {
 	lastFileEntry := &metadata.Files[fileIndex]
 	lastFileEntry.Count = int((tip.Height % 100000) + 1)
 	lastFileEntry.LastChainWork = ChainWorkToHex(tip.ChainWork)
-	lastFileEntry.LastHash = tip.Hash().String()
+	lastFileEntry.LastHash = tip.Hash
 
 	// Get previous header for prevChainWork and prevHash
 	if tip.Height > 0 {
 		prevHeader, err := cm.GetHeaderByHeight(tip.Height - 1)
 		if err == nil {
 			lastFileEntry.PrevChainWork = ChainWorkToHex(prevHeader.ChainWork)
-			lastFileEntry.PrevHash = prevHeader.Hash().String()
+			lastFileEntry.PrevHash = prevHeader.Hash
 		}
 	}
 

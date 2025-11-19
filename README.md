@@ -9,7 +9,7 @@ A Go implementation of blockchain header management for Bitcoin SV (BSV).
 - Automatic orphan pruning (keeps last 100 blocks)
 - P2P live sync with automatic updates
 - Optional bootstrap sync from remote node
-- REST API compatible with TypeScript wallet-toolbox
+- REST API with v2 endpoints
 - File-based persistence with metadata
 
 ## Installation
@@ -57,6 +57,38 @@ header, err := cm.GetHeaderByHash(&hash)
 defer cm.Stop()
 ```
 
+### As a Client
+
+```go
+import "github.com/bsv-blockchain/go-chaintracks/pkg/chaintracks"
+
+// Connect to remote chaintracks server
+client := chaintracks.NewChainClient("http://localhost:3011")
+
+// Start SSE connection for automatic updates
+ctx := context.Background()
+tipChanges, err := client.Start(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Listen for tip changes (optional)
+go func() {
+    for tip := range tipChanges {
+        log.Printf("New tip: height=%d hash=%s", tip.Height, tip.Hash)
+    }
+}()
+
+// Query methods (same interface as ChainManager)
+tip := client.GetTip()
+height := client.GetHeight()
+header, err := client.GetHeaderByHeight(123456)
+header, err := client.GetHeaderByHash(&hash)
+
+// Cleanup
+defer client.Stop()
+```
+
 ### As a Server
 
 ```bash
@@ -76,14 +108,14 @@ Server starts on port 3011 with Swagger UI at `/docs`.
 
 ## API Endpoints
 
-- `GET /network` - Network name (main, test, or teratest)
-- `GET /info` - Service state and configuration
-- `GET /height` - Current blockchain height
-- `GET /tip/hash` - Chain tip hash
-- `GET /tip/header` - Chain tip header object
-- `GET /header/height/?height=N` - Header by height (query param)
-- `GET /header/hash/?hash=H` - Header by hash (query param)
-- `GET /headers?height=N&count=C` - Multiple headers
+- `GET /v2/network` - Network name (main, test, or teratest)
+- `GET /v2/height` - Current blockchain height
+- `GET /v2/tip/hash` - Chain tip hash
+- `GET /v2/tip/header` - Chain tip header object
+- `GET /v2/tip/stream` - SSE stream for real-time tip updates
+- `GET /v2/header/height/:height` - Header by height (path param)
+- `GET /v2/header/hash/:hash` - Header by hash (path param)
+- `GET /v2/headers?height=N&count=C` - Multiple headers
 
 Full API documentation available at `/docs` when running.
 
@@ -117,7 +149,8 @@ go test ./pkg/chaintracks -v
 ## Dependencies
 
 - `github.com/bsv-blockchain/go-sdk` - BSV blockchain SDK
-- Standard library only
+- `github.com/gofiber/fiber/v2` - Web framework (server only)
+- `github.com/joho/godotenv` - Environment configuration (server only)
 
 ## License
 
